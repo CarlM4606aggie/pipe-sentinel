@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+env/
+*.egg
+.DS_Store
+.coverage
+.ruff_cache/
+Thumbs.db
+.Python
+Desktop.ini
+*.log
+.mypy_cache/
+.venv/

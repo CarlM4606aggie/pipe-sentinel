@@ -1,0 +1,37 @@
+# pipe-sentinel configuration file
+
+log_dir: logs
+
+smtp:
+  host: smtp.example.com
+  port: 587
+  user: alerts@example.com
+  password: "changeme"
+  from: alerts@example.com
+
+pipelines:
+  - name: daily_sales_etl
+    command: python etl/sales_pipeline.py --date today
+    max_retries: 3
+    retry_delay_seconds: 60
+    timeout_seconds: 1800
+    alert_emails:
+      - oncall@example.com
+      - data-team@example.com
+    enabled: true
+
+  - name: user_sync
+    command: python etl/user_sync.py
+    max_retries: 2
+    retry_delay_seconds: 30
+    timeout_seconds: 600
+    alert_emails:
+      - oncall@example.com
+    enabled: true
+
+  - name: legacy_report
+    command: bash scripts/legacy_report.sh
+    max_retries: 1
+    retry_delay_seconds: 120
+    alert_emails: []
+    enabled: false

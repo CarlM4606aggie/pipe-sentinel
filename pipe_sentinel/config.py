@@ -1,11 +1,9 @@
-"""Configuration loading and dataclasses for pipe-sentinel."""
+"""Configuration loading for pipe-sentinel."""
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -14,58 +12,57 @@ import yaml
 class PipelineConfig:
     name: str
     command: str
-    timeout: int = 60
     retries: int = 0
-    retry_delay: float = 5.0
-    recipients: list[str] = field(default_factory=list)
+    timeout: int = 300
+    recipients: List[str] = field(default_factory=list)
+    max_age_minutes: Optional[int] = None
 
 
 @dataclass
 class SmtpConfig:
     host: str
     port: int
-    sender: str
-    username: Optional[str] = None
-    password: Optional[str] = None
-    use_tls: bool = True
+    username: str
+    password: str
+    from_address: str
 
 
 @dataclass
 class SentinelConfig:
-    pipelines: list[PipelineConfig]
-    smtp: Optional[SmtpConfig] = None
-    log_level: str = "INFO"
+    smtp: SmtpConfig
+    pipelines: List[PipelineConfig]
+    db_path: str = "audit.db"
+    dry_run: bool = False
 
 
-def _parse_pipeline(data: dict) -> PipelineConfig:
-    return PipelineConfig(
-        name=data["name"],
-        command=data["command"],
-        timeout=int(data.get("timeout", 60)),
-        retries=int(data.get("retries", 0)),
-        retry_delay=float(data.get("retry_delay", 5.0)),
-        recipients=data.get("recipients", []),
-    )
-
-
-def _parse_smtp(data: dict) -> SmtpConfig:
+def _parse_smtp(raw: Dict[str, Any]) -> SmtpConfig:
     return SmtpConfig(
-        host=data["host"],
-        port=int(data.get("port", 587)),
-        sender=data["sender"],
-        username=data.get("username") or os.environ.get("SMTP_USERNAME"),
-        password=data.get("password") or os.environ.get("SMTP_PASSWORD"),
-        use_tls=bool(data.get("use_tls", True)),
+        host=raw["host"],
+        port=int(raw["port"]),
+        username=raw["username"],
+        password=raw["password"],
+        from_address=raw["from_address"],
     )
 
 
-def load_config(path: str | Path = "sentinel.yml") -> SentinelConfig:
-    """Load and parse the sentinel YAML configuration file."""
-    raw = Path(path).read_text(encoding="utf-8")
-    data = yaml.safe_load(raw)
+def _parse_pipeline(raw: Dict[str, Any]) -> PipelineConfig:
+    return PipelineConfig(
+        name=raw["name"],
+        command=raw["command"],
+        retries=int(raw.get("retries", 0)),
+        timeout=int(raw.get("timeout", 300)),
+        recipients=raw.get("recipients", []),
+        max_age_minutes=raw.get("max_age_minutes", None),
+    )
 
-    pipelines = [_parse_pipeline(p) for p in data.get("pipelines", [])]
-    smtp = _parse_smtp(data["smtp"]) if "smtp" in data else None
-    log_level = data.get("log_level", "INFO").upper()
 
-    return SentinelConfig(pipelines=pipelines, smtp=smtp, log_level=log_level)
+def load_config(path: str) -> SentinelConfig:
+    """Load and parse a sentinel YAML configuration file."""
+    with open(path, "r") as fh:
+        raw = yaml.safe_load(fh)
+
+    smtp = _parse_smtp(raw["smtp"])
+    pipelines = [_parse_pipeline(p) for p in raw.get("pipelines", [])]
+    db_path = raw.get("db_path", "audit.db")
+
+    return SentinelConfig(smtp=smtp, pipelines=pipelines, db_path=db_path)

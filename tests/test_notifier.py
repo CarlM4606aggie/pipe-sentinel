@@ -65,6 +65,26 @@ def test_send_alert_success(smtp_cfg, failed_result):
     mock_server.sendmail.assert_called_once()
 
 
+def test_send_alert_no_tls_skips_starttls(smtp_cfg, failed_result):
+    """When use_tls is False, starttls should not be called."""
+    smtp_cfg_no_tls = SmtpConfig(
+        host="smtp.example.com",
+        port=25,
+        sender="sentinel@example.com",
+        username="user",
+        password="secret",
+        use_tls=False,
+    )
+    with patch("pipe_sentinel.notifier.smtplib.SMTP") as mock_smtp_cls:
+        mock_server = MagicMock()
+        mock_smtp_cls.return_value.__enter__.return_value = mock_server
+
+        result = send_alert(smtp_cfg_no_tls, "my_pipeline", failed_result, "ops@example.com")
+
+    assert result.success is True
+    mock_server.starttls.assert_not_called()
+
+
 def test_send_alert_failure_returns_error(smtp_cfg, failed_result):
     with patch("pipe_sentinel.notifier.smtplib.SMTP", side_effect=OSError("conn refused")):
         result = send_alert(smtp_cfg, "my_pipeline", failed_result, "ops@example.com")

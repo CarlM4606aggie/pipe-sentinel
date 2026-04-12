@@ -1,65 +1,84 @@
-"""Configuration loader for pipe-sentinel."""
-
-import os
-from dataclasses import dataclass, field
-from typing import List, Optional
+"""Configuration loading and dataclasses for pipe-sentinel."""
 
 import yaml
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
 
 
 @dataclass
 class PipelineConfig:
+    """Configuration for a single monitored pipeline."""
+
     name: str
     command: str
+    schedule: str
     max_retries: int = 3
-    retry_delay_seconds: int = 30
-    alert_emails: List[str] = field(default_factory=list)
-    timeout_seconds: Optional[int] = None
-    enabled: bool = True
+    retry_delay_seconds: int = 60
+    timeout_seconds: int = 3600
+    alert_on_failure: bool = True
+    description: Optional[str] = None
+
+
+@dataclass
+class SmtpConfig:
+    """SMTP settings for email alerts."""
+
+    host: str
+    port: int
+    username: str
+    password: str
+    from_address: str
+    use_tls: bool = True
 
 
 @dataclass
 class SentinelConfig:
-    pipelines: List[PipelineConfig] = field(default_factory=list)
-    log_dir: str = "logs"
-    smtp_host: Optional[str] = None
-    smtp_port: int = 587
-    smtp_user: Optional[str] = None
-    smtp_password: Optional[str] = None
-    alert_from: Optional[str] = None
+    """Root configuration for pipe-sentinel."""
+
+    alert_recipients: list[str]
+    pipelines: list[PipelineConfig]
+    smtp: Optional[SmtpConfig] = None
+    log_level: str = "INFO"
+    state_dir: str = ".pipe_sentinel_state"
 
 
-def load_config(path: str = "sentinel.yml") -> SentinelConfig:
-    """Load and parse the sentinel YAML configuration file."""
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Config file not found: {path}")
+def _parse_pipeline(data: dict) -> PipelineConfig:
+    return PipelineConfig(
+        name=data["name"],
+        command=data["command"],
+        schedule=data["schedule"],
+        max_retries=data.get("max_retries", 3),
+        retry_delay_seconds=data.get("retry_delay_seconds", 60),
+        timeout_seconds=data.get("timeout_seconds", 3600),
+        alert_on_failure=data.get("alert_on_failure", True),
+        description=data.get("description"),
+    )
 
-    with open(path, "r") as f:
-        raw = yaml.safe_load(f)
 
-    if raw is None:
-        raise ValueError("Config file is empty or invalid YAML.")
+def _parse_smtp(data: dict) -> SmtpConfig:
+    return SmtpConfig(
+        host=data["host"],
+        port=int(data["port"]),
+        username=data["username"],
+        password=data["password"],
+        from_address=data["from_address"],
+        use_tls=data.get("use_tls", True),
+    )
 
-    pipelines = [
-        PipelineConfig(
-            name=p["name"],
-            command=p["command"],
-            max_retries=p.get("max_retries", 3),
-            retry_delay_seconds=p.get("retry_delay_seconds", 30),
-            alert_emails=p.get("alert_emails", []),
-            timeout_seconds=p.get("timeout_seconds"),
-            enabled=p.get("enabled", True),
-        )
-        for p in raw.get("pipelines", [])
-    ]
 
-    smtp = raw.get("smtp", {})
+def load_config(path: str | Path) -> SentinelConfig:
+    """Load and parse a sentinel YAML configuration file."""
+    with open(path, "r") as fh:
+        raw = yaml.safe_load(fh)
+
+    smtp = _parse_smtp(raw["smtp"]) if "smtp" in raw else None
+    pipelines = [_parse_pipeline(p) for p in raw.get("pipelines", [])]
+
     return SentinelConfig(
+        alert_recipients=raw.get("alert_recipients", []),
         pipelines=pipelines,
-        log_dir=raw.get("log_dir", "logs"),
-        smtp_host=smtp.get("host"),
-        smtp_port=smtp.get("port", 587),
-        smtp_user=smtp.get("user"),
-        smtp_password=smtp.get("password"),
-        alert_from=smtp.get("from"),
+        smtp=smtp,
+        log_level=raw.get("log_level", "INFO"),
+        state_dir=raw.get("state_dir", ".pipe_sentinel_state"),
     )

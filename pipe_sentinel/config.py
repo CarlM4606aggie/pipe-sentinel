@@ -1,84 +1,71 @@
 """Configuration loading and dataclasses for pipe-sentinel."""
 
-import yaml
+from __future__ import annotations
+
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+import yaml
+
 
 @dataclass
 class PipelineConfig:
-    """Configuration for a single monitored pipeline."""
-
     name: str
     command: str
-    schedule: str
-    max_retries: int = 3
-    retry_delay_seconds: int = 60
-    timeout_seconds: int = 3600
-    alert_on_failure: bool = True
-    description: Optional[str] = None
+    timeout: int = 60
+    retries: int = 0
+    retry_delay: float = 5.0
+    recipients: list[str] = field(default_factory=list)
 
 
 @dataclass
 class SmtpConfig:
-    """SMTP settings for email alerts."""
-
     host: str
     port: int
-    username: str
-    password: str
-    from_address: str
+    sender: str
+    username: Optional[str] = None
+    password: Optional[str] = None
     use_tls: bool = True
 
 
 @dataclass
 class SentinelConfig:
-    """Root configuration for pipe-sentinel."""
-
-    alert_recipients: list[str]
     pipelines: list[PipelineConfig]
     smtp: Optional[SmtpConfig] = None
     log_level: str = "INFO"
-    state_dir: str = ".pipe_sentinel_state"
 
 
 def _parse_pipeline(data: dict) -> PipelineConfig:
     return PipelineConfig(
         name=data["name"],
         command=data["command"],
-        schedule=data["schedule"],
-        max_retries=data.get("max_retries", 3),
-        retry_delay_seconds=data.get("retry_delay_seconds", 60),
-        timeout_seconds=data.get("timeout_seconds", 3600),
-        alert_on_failure=data.get("alert_on_failure", True),
-        description=data.get("description"),
+        timeout=int(data.get("timeout", 60)),
+        retries=int(data.get("retries", 0)),
+        retry_delay=float(data.get("retry_delay", 5.0)),
+        recipients=data.get("recipients", []),
     )
 
 
 def _parse_smtp(data: dict) -> SmtpConfig:
     return SmtpConfig(
         host=data["host"],
-        port=int(data["port"]),
-        username=data["username"],
-        password=data["password"],
-        from_address=data["from_address"],
-        use_tls=data.get("use_tls", True),
+        port=int(data.get("port", 587)),
+        sender=data["sender"],
+        username=data.get("username") or os.environ.get("SMTP_USERNAME"),
+        password=data.get("password") or os.environ.get("SMTP_PASSWORD"),
+        use_tls=bool(data.get("use_tls", True)),
     )
 
 
-def load_config(path: str | Path) -> SentinelConfig:
-    """Load and parse a sentinel YAML configuration file."""
-    with open(path, "r") as fh:
-        raw = yaml.safe_load(fh)
+def load_config(path: str | Path = "sentinel.yml") -> SentinelConfig:
+    """Load and parse the sentinel YAML configuration file."""
+    raw = Path(path).read_text(encoding="utf-8")
+    data = yaml.safe_load(raw)
 
-    smtp = _parse_smtp(raw["smtp"]) if "smtp" in raw else None
-    pipelines = [_parse_pipeline(p) for p in raw.get("pipelines", [])]
+    pipelines = [_parse_pipeline(p) for p in data.get("pipelines", [])]
+    smtp = _parse_smtp(data["smtp"]) if "smtp" in data else None
+    log_level = data.get("log_level", "INFO").upper()
 
-    return SentinelConfig(
-        alert_recipients=raw.get("alert_recipients", []),
-        pipelines=pipelines,
-        smtp=smtp,
-        log_level=raw.get("log_level", "INFO"),
-        state_dir=raw.get("state_dir", ".pipe_sentinel_state"),
-    )
+    return SentinelConfig(pipelines=pipelines, smtp=smtp, log_level=log_level)

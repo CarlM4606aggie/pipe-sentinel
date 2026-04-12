@@ -1,103 +1,91 @@
-"""Audit log module for persisting pipeline run history to a local SQLite database."""
+"""SQLite-backed audit log for pipeline run results."""
 
 import sqlite3
-import json
 from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
 from typing import List, Optional
-
 from pipe_sentinel.runner import RunResult
-
-DEFAULT_DB_PATH = Path("pipe_sentinel_audit.db")
 
 
 @dataclass
 class AuditRecord:
+    id: Optional[int]
     pipeline_name: str
-    success: bool
-    exit_code: Optional[int]
-    stdout: str
-    stderr: str
-    attempts: int
-    duration_seconds: float
-    recorded_at: str
+    status: str
+    ran_at: str
+    duration: Optional[float]
+    retries: int
+    error: Optional[str]
 
 
-def _connect(db_path: Path) -> sqlite3.Connection:
+def _connect(db_path: str) -> sqlite3.Connection:
+    """Open a SQLite connection with row factory enabled."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
 
-def init_db(db_path: Path = DEFAULT_DB_PATH) -> None:
-    """Create the audit table if it does not exist."""
+def init_db(db_path: str) -> None:
+    """Create the audit_runs table if it does not already exist."""
     with _connect(db_path) as conn:
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS pipeline_runs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+            CREATE TABLE IF NOT EXISTS audit_runs (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 pipeline_name TEXT NOT NULL,
-                success INTEGER NOT NULL,
-                exit_code INTEGER,
-                stdout TEXT,
-                stderr TEXT,
-                attempts INTEGER NOT NULL,
-                duration_seconds REAL NOT NULL,
-                recorded_at TEXT NOT NULL
+                status      TEXT NOT NULL,
+                ran_at      TEXT NOT NULL,
+                duration    REAL,
+                retries     INTEGER NOT NULL DEFAULT 0,
+                error       TEXT
             )
             """
         )
+        conn.commit()
 
 
-def record_run(result: RunResult, db_path: Path = DEFAULT_DB_PATH) -> None:
-    """Persist a RunResult to the audit database."""
-    init_db(db_path)
-    recorded_at = datetime.utcnow().isoformat()
+def record_run(db_path: str, result: RunResult) -> None:
+    """Persist a RunResult to the audit log."""
+    status = "success" if result.success else "failure"
+    error_msg = result.stderr.strip() if result.stderr else None
     with _connect(db_path) as conn:
         conn.execute(
             """
-            INSERT INTO pipeline_runs
-                (pipeline_name, success, exit_code, stdout, stderr, attempts, duration_seconds, recorded_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO audit_runs (pipeline_name, status, ran_at, duration, retries, error)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 result.pipeline_name,
-                int(result.success),
-                result.exit_code,
-                result.stdout,
-                result.stderr,
-                result.attempts,
-                result.duration_seconds,
-                recorded_at,
+                status,
+                result.started_at.isoformat() if result.started_at else "",
+                result.duration,
+                result.attempts - 1,
+                error_msg,
             ),
         )
+        conn.commit()
 
 
-def fetch_recent(pipeline_name: str, limit: int = 10, db_path: Path = DEFAULT_DB_PATH) -> List[AuditRecord]:
-    """Return the most recent audit records for a given pipeline."""
-    init_db(db_path)
+def fetch_recent(db_path: str, limit: int = 50) -> List[AuditRecord]:
+    """Return the most recent audit records, newest first."""
     with _connect(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT pipeline_name, success, exit_code, stdout, stderr, attempts, duration_seconds, recorded_at
-            FROM pipeline_runs
-            WHERE pipeline_name = ?
+            SELECT id, pipeline_name, status, ran_at, duration, retries, error
+            FROM audit_runs
             ORDER BY id DESC
             LIMIT ?
             """,
-            (pipeline_name, limit),
+            (limit,),
         ).fetchall()
     return [
         AuditRecord(
+            id=row["id"],
             pipeline_name=row["pipeline_name"],
-            success=bool(row["success"]),
-            exit_code=row["exit_code"],
-            stdout=row["stdout"] or "",
-            stderr=row["stderr"] or "",
-            attempts=row["attempts"],
-            duration_seconds=row["duration_seconds"],
-            recorded_at=row["recorded_at"],
+            status=row["status"],
+            ran_at=row["ran_at"],
+            duration=row["duration"],
+            retries=row["retries"],
+            error=row["error"],
         )
         for row in rows
     ]

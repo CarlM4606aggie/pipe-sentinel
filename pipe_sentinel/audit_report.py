@@ -1,41 +1,44 @@
-"""Generate a human-readable audit summary report from stored run history."""
+"""Audit report formatting utilities for pipe-sentinel."""
 
-from pathlib import Path
+from dataclasses import dataclass
 from typing import List
+from pipe_sentinel.audit import AuditRecord
 
-from pipe_sentinel.audit import AuditRecord, fetch_recent, DEFAULT_DB_PATH
 
-
-def _status_symbol(success: bool) -> str:
-    return "✓" if success else "✗"
+def _status_symbol(status: str) -> str:
+    """Return a visual symbol for a given status string."""
+    return "✓" if status == "success" else "✗"
 
 
 def format_record(record: AuditRecord) -> str:
-    status = _status_symbol(record.success)
+    """Format a single AuditRecord into a human-readable string."""
+    symbol = _status_symbol(record.status)
+    duration = f"{record.duration:.2f}s" if record.duration is not None else "N/A"
+    error_part = f" | error: {record.error}" if record.error else ""
     return (
-        f"  [{status}] {record.recorded_at}  "
-        f"exit={record.exit_code}  attempts={record.attempts}  "
-        f"duration={record.duration_seconds:.2f}s"
+        f"[{symbol}] {record.pipeline_name:<24} "
+        f"ran_at={record.ran_at}  "
+        f"duration={duration}  "
+        f"retries={record.retries}"
+        f"{error_part}"
     )
 
 
-def build_report(pipeline_names: List[str], limit: int = 5, db_path: Path = DEFAULT_DB_PATH) -> str:
-    """Build a multi-pipeline audit summary string."""
-    lines: List[str] = ["=== Pipe-Sentinel Audit Report ===", ""]
-    for name in pipeline_names:
-        records = fetch_recent(name, limit=limit, db_path=db_path)
-        total = len(records)
-        passed = sum(1 for r in records if r.success)
-        lines.append(f"Pipeline: {name}  (last {total} runs: {passed} passed, {total - passed} failed)")
-        if records:
-            for rec in records:
-                lines.append(format_record(rec))
-        else:
-            lines.append("  No runs recorded.")
-        lines.append("")
+def build_report(records: List[AuditRecord]) -> str:
+    """Build a full report string from a list of AuditRecords."""
+    if not records:
+        return "No audit records found."
+
+    lines = ["=== Pipe Sentinel Audit Report ===", ""]
+    for record in records:
+        lines.append(format_record(record))
+    lines.append("")
+    total = len(records)
+    failures = sum(1 for r in records if r.status != "success")
+    lines.append(f"Total: {total}  Passed: {total - failures}  Failed: {failures}")
     return "\n".join(lines)
 
 
-def print_report(pipeline_names: List[str], limit: int = 5, db_path: Path = DEFAULT_DB_PATH) -> None:
+def print_report(records: List[AuditRecord]) -> None:
     """Print the audit report to stdout."""
-    print(build_report(pipeline_names, limit=limit, db_path=db_path))
+    print(build_report(records))

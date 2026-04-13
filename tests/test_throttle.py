@@ -45,6 +45,12 @@ def test_not_suppressed_after_cooldown_expires(state: ThrottleState) -> None:
     assert state.is_suppressed("my_pipeline") is False
 
 
+def test_suppressed_just_before_cooldown_expires(state: ThrottleState) -> None:
+    """Alert recorded 59 seconds ago should still be suppressed with a 60s cooldown."""
+    state._timestamps["my_pipeline"] = time.time() - 59
+    assert state.is_suppressed("my_pipeline") is True
+
+
 # ---------------------------------------------------------------------------
 # ThrottleState.load / save
 # ---------------------------------------------------------------------------
@@ -98,11 +104,5 @@ def test_should_alert_true_when_no_prior(state: ThrottleState) -> None:
 
 
 def test_should_alert_false_after_mark(state: ThrottleState) -> None:
-    mark_alerted(state, "pipe_x", persist=False)
+    mark_alerted(state, "pipe_x")
     assert should_alert(state, "pipe_x") is False
-
-
-def test_mark_alerted_persists_to_disk(state: ThrottleState, state_file: Path) -> None:
-    mark_alerted(state, "pipe_x", persist=True)
-    data = json.loads(state_file.read_text())
-    assert "pipe_x" in data

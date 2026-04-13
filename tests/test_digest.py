@@ -52,6 +52,12 @@ def test_build_digest_pass_rate(mixed_records):
     assert report.pass_rate == pytest.approx(50.0)
 
 
+def test_build_digest_pass_rate_all_passing(all_passing):
+    """Pass rate should be 100.0 when every record is a success."""
+    report = build_digest(all_passing, generated_at=_TS)
+    assert report.pass_rate == pytest.approx(100.0)
+
+
 def test_build_digest_failed_pipeline_names(mixed_records):
     report = build_digest(mixed_records, generated_at=_TS)
     assert "beta" in report.pipelines

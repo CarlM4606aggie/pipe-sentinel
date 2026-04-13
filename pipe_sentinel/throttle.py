@@ -51,6 +51,19 @@ class ThrottleState:
         else:
             self._timestamps.pop(pipeline_name, None)
 
+    def time_until_unthrottled(self, pipeline_name: str) -> Optional[float]:
+        """Return seconds remaining in the cooldown window for *pipeline_name*.
+
+        Returns ``None`` if the pipeline is not currently throttled, or a
+        positive float representing how many seconds remain before a new alert
+        would be allowed.
+        """
+        last = self._timestamps.get(pipeline_name)
+        if last is None:
+            return None
+        remaining = self.cooldown_seconds - (time.time() - last)
+        return remaining if remaining > 0 else None
+
 
 def should_alert(state: ThrottleState, pipeline_name: str) -> bool:
     """Return True when an alert should be sent (not suppressed)."""

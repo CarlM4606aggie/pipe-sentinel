@@ -12,6 +12,24 @@ def _format_ts(epoch: float) -> str:
     return datetime.datetime.utcfromtimestamp(epoch).strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _format_duration(seconds: float) -> str:
+    """Return a human-readable string for a duration given in seconds.
+
+    Examples: '2h 15m', '45m 30s', '10s'.
+    """
+    seconds = int(seconds)
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    parts = []
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}m")
+    if secs or not parts:
+        parts.append(f"{secs}s")
+    return " ".join(parts)
+
+
 def format_entry(entry: PauseEntry, now: float | None = None) -> str:
     ts = now if now is not None else time.time()
     active = entry.is_active(ts)
@@ -22,6 +40,9 @@ def format_entry(entry: PauseEntry, now: float | None = None) -> str:
         lines.append(f"    reason    : {entry.reason}")
     if entry.resume_at is not None:
         lines.append(f"    resume_at : {_format_ts(entry.resume_at)}")
+        if active:
+            remaining = entry.resume_at - ts
+            lines.append(f"    remaining : {_format_duration(remaining)}")
     else:
         lines.append("    resume_at : indefinite")
     return "\n".join(lines)

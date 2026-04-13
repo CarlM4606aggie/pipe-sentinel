@@ -21,6 +21,13 @@ class SummaryStats:
             return 0.0
         return self.passed / self.total * 100
 
+    @property
+    def avg_duration(self) -> float:
+        """Average duration per pipeline run, or 0.0 if no runs."""
+        if self.total == 0:
+            return 0.0
+        return self.total_duration / self.total
+
 
 def compute_stats(results: List[RunResult]) -> SummaryStats:
     """Compute aggregate statistics from a list of RunResults."""
@@ -48,6 +55,7 @@ def format_summary(report: ScheduleReport) -> str:
         f"Failed          : {stats.failed}",
         f"Pass rate       : {stats.pass_rate:.1f}%",
         f"Total duration  : {stats.total_duration:.2f}s",
+        f"Avg duration    : {stats.avg_duration:.2f}s",
         "-" * 40,
     ]
     for result in report.results:

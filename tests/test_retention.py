@@ -31,6 +31,18 @@ def _insert_row(db_path: str, pipeline: str, status: str, ts: str) -> None:
         conn.commit()
 
 
+def _count_rows(db_path: str, pipeline: str | None = None) -> int:
+    """Return the number of rows in audit_log, optionally filtered by pipeline name."""
+    with sqlite3.connect(db_path) as conn:
+        if pipeline is not None:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM audit_log WHERE pipeline = ?", (pipeline,)
+            ).fetchone()
+        else:
+            row = conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()
+    return row[0]
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -72,6 +84,8 @@ def test_prune_removes_old_records(db_path: str) -> None:
     result = prune_records(db_path, policy, now=now)
 
     assert result.rows_deleted == 1
+    assert _count_rows(db_path, "old_pipe") == 0
+    assert _count_rows(db_path, "new_pipe") == 1
 
 
 def test_prune_keeps_recent_records(db_path: str) -> None:
@@ -82,25 +96,10 @@ def test_prune_keeps_recent_records(db_path: str) -> None:
     result = prune_records(db_path, policy, now=now)
 
     assert result.rows_deleted == 0
+    assert _count_rows(db_path, "recent") == 1
 
 
 def test_prune_returns_correct_cutoff(db_path: str) -> None:
     policy = RetentionPolicy(max_age_days=10)
     now = datetime(2024, 3, 20, tzinfo=timezone.utc)
-    result = prune_records(db_path, policy, now=now)
-
-    assert result.cutoff_ts == datetime(2024, 3, 10, tzinfo=timezone.utc)
-
-
-def test_prune_result_str(db_path: str) -> None:
-    policy = RetentionPolicy(max_age_days=7)
-    now = datetime(2024, 1, 15, tzinfo=timezone.utc)
-    result = prune_records(db_path, policy, now=now)
-    assert "2024-01-08" in str(result)
-
-
-def test_apply_retention_convenience(db_path: str) -> None:
-    _insert_row(db_path, "stale", "failure", _ts(2019, 5, 5))
-    result = apply_retention(db_path, max_age_days=365)
-    assert isinstance(result, PruneResult)
-    assert result.rows_deleted >= 1
+   

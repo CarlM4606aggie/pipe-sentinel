@@ -41,6 +41,21 @@ class CheckpointStore:
             return None
         return (now if now is not None else time.time()) - ts
 
+    def is_stale(self, pipeline_name: str, threshold_seconds: float, now: Optional[float] = None) -> bool:
+        """Return True if the pipeline has not succeeded within *threshold_seconds*.
+
+        A pipeline with no recorded checkpoint is always considered stale.
+
+        Args:
+            pipeline_name: The name of the pipeline to check.
+            threshold_seconds: Maximum acceptable age in seconds.
+            now: Reference timestamp (defaults to ``time.time()``).
+        """
+        age = self.age_seconds(pipeline_name, now=now)
+        if age is None:
+            return True
+        return age > threshold_seconds
+
     def clear(self, pipeline_name: str) -> bool:
         """Remove the checkpoint for *pipeline_name*. Returns True if it existed."""
         existed = pipeline_name in self._data

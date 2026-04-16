@@ -37,7 +37,12 @@ class QuotaStore:
 
     def __post_init__(self) -> None:
         if self.path.exists():
-            raw = json.loads(self.path.read_text())
+            try:
+                raw = json.loads(self.path.read_text())
+            except (json.JSONDecodeError, OSError) as exc:
+                raise ValueError(
+                    f"Failed to load quota store from {self.path}: {exc}"
+                ) from exc
             for name, blob in raw.items():
                 self._states[name] = QuotaState.from_dict(blob)
 
@@ -72,3 +77,13 @@ class QuotaStore:
         state = self._state(pipeline)
         state.timestamps.append(now)
         self._save()
+
+    def reset(self, pipeline: str) -> None:
+        """Clear all recorded run timestamps for the given pipeline.
+
+        Useful for testing or manually lifting a quota block without
+        waiting for the rolling window to expire.
+        """
+        if pipeline in self._states:
+            self._states[pipeline].timestamps = []
+            self._save()

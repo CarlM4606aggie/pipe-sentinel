@@ -16,9 +16,38 @@ def roster_from_config(config: Any) -> Roster:
 
 
 def failed_pipeline_names(results: List[RunResult]) -> List[str]:
+    """Return a list of pipeline names that did not succeed."""
     return [r.pipeline for r in results if not r.success]
 
 
 def owners_for_results(roster: Roster, results: List[RunResult]) -> Dict[str, List[str]]:
+    """Map each failed pipeline to its list of owners.
+
+    Args:
+        roster: The roster containing pipeline ownership information.
+        results: The list of run results to inspect for failures.
+
+    Returns:
+        A dict mapping pipeline name to a list of owner strings for
+        every pipeline that failed. Pipelines with no roster entry
+        are omitted from the returned dict.
+    """
     failed = failed_pipeline_names(results)
     return owners_for_failures(roster, failed)
+
+
+def unregistered_failures(roster: Roster, results: List[RunResult]) -> List[str]:
+    """Return failed pipeline names that have no entry in the roster.
+
+    Useful for surfacing pipelines that are failing but have not yet
+    been assigned an owner in the sentinel configuration.
+
+    Args:
+        roster: The roster containing pipeline ownership information.
+        results: The list of run results to inspect for failures.
+
+    Returns:
+        A list of pipeline names that failed and are absent from the roster.
+    """
+    failed = failed_pipeline_names(results)
+    return [name for name in failed if name not in roster]
